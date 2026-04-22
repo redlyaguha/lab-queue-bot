@@ -135,7 +135,26 @@ async def cmd_start(message: Message, state: FSMContext):
     else:
         users[message.from_user.id] = str(message.from_user.id)
 
-    await show_main_menu(callback)
+    builder = InlineKeyboardBuilder()
+    builder.add(
+        InlineKeyboardButton(text="📋 Очереди", callback_data="menu_queues"),
+        InlineKeyboardButton(text="📝 Мои записи", callback_data="menu_myqueues"),
+    )
+    builder.add(
+        InlineKeyboardButton(text="🔄 Обмен с другим", callback_data="menu_swap"),
+        InlineKeyboardButton(text="📍 Сменить место", callback_data="menu_freeswap"),
+    )
+    if is_admin(message.from_user.id):
+        builder.add(
+            InlineKeyboardButton(text="⚙️ Создать очередь", callback_data="menu_create"),
+        )
+    builder.adjust(2)
+
+    await message.answer(
+        "👋 Бот для управления очередями лабораторных работ.\n\n"
+        "Выберите действие:",
+        reply_markup=builder.as_markup(),
+    )
 
 
 @router.callback_query(lambda c: c.data == "menu_queues")
@@ -272,7 +291,8 @@ async def menu_create(callback: CallbackQuery, state: FSMContext):
         return
 
     await state.set_state(QueueStates.waiting_for_queue_name)
-    await callback.message.edit_text(
+    await callback.message.delete()
+    msg = await callback.message.answer(
         "📝 Введите название очереди (до 30 мест):\n"
         "Формат: <название> <количество_мест>\n"
         "Пример: Лаба1 15",
@@ -282,6 +302,7 @@ async def menu_create(callback: CallbackQuery, state: FSMContext):
             ]]
         ),
     )
+    await state.update_data(instruction_msg_id=msg.message_id)
 
 
 @router.callback_query(lambda c: c.data == "back_to_menu")
@@ -667,16 +688,42 @@ async def decline_swap(callback: CallbackQuery, state: FSMContext):
 async def process_queue_creation(message: Message, state: FSMContext):
     """Обработка создания очереди"""
     try:
+        await message.delete()
+        data = await state.get_data()
+        instruction_msg_id = data.get("instruction_msg_id")
+
         parts = message.text.strip().split()
         if len(parts) != 2:
-            await message.answer("❌ Неверный формат! Пример: Лаба1 15")
+            msg = await message.answer(
+                "❌ Неверный формат!\nПример: Лаба1 15\n\n📝 Введите название очереди (до 30 мест):",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+                ]])
+            )
+            await state.update_data(instruction_msg_id=msg.message_id)
+            if instruction_msg_id:
+                try:
+                    await message.chat.delete_message(instruction_msg_id)
+                except:
+                    pass
             return
 
         name = parts[0]
         max_places = int(parts[1])
 
         if max_places < 1 or max_places > 30:
-            await message.answer("❌ Количество мест: 1-30")
+            msg = await message.answer(
+                "❌ Количество мест: 1-30",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+                ]])
+            )
+            await state.update_data(instruction_msg_id=msg.message_id)
+            if instruction_msg_id:
+                try:
+                    await message.chat.delete_message(instruction_msg_id)
+                except:
+                    pass
             return
 
         queue_id = len(queues) + 1
@@ -686,11 +733,24 @@ async def process_queue_creation(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(
             f"✅ Очередь {name} создана!\n📊 Максимум мест: {max_places}",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад в меню", callback_data="back_to_menu"),
+            ]])
         )
+        if instruction_msg_id:
+            try:
+                await message.chat.delete_message(instruction_msg_id)
+            except:
+                pass
 
     except ValueError:
-        await state.clear()
-        await message.answer("❌ Неверный формат! Пример: Лаба1 15")
+        await message.delete()
+        await message.answer(
+            "❌ Неверный формат!\nПример: Лаба1 15",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+            ]])
+        )
 
 
 async def main():
