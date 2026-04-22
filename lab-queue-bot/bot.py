@@ -96,10 +96,10 @@ def get_queue_view(queue: Queue, users: dict[int, str]) -> str:
     return "\n".join(lines)
 
 
-async def show_main_menu(message_or_callback, user_id: int = None):
-    """Показать главное меню"""
+async def show_main_menu(callback, user_id: int = None):
+    """Показать главное меню, удалив предыдущее сообщение"""
     if user_id is None:
-        user_id = message_or_callback.from_user.id
+        user_id = callback.from_user.id
 
     builder = InlineKeyboardBuilder()
     builder.add(
@@ -116,12 +116,8 @@ async def show_main_menu(message_or_callback, user_id: int = None):
         )
     builder.adjust(2)
 
-    if hasattr(message_or_callback, 'message'):
-        msg = message_or_callback.message
-    else:
-        msg = message_or_callback
-
-    await msg.answer(
+    await callback.message.delete()
+    await callback.message.answer(
         "👋 Бот для управления очередями лабораторных работ.\n\n"
         "Выберите действие:",
         reply_markup=builder.as_markup(),
@@ -139,14 +135,17 @@ async def cmd_start(message: Message, state: FSMContext):
     else:
         users[message.from_user.id] = str(message.from_user.id)
 
-    await show_main_menu(message)
+    await show_main_menu(callback)
 
 
 @router.callback_query(lambda c: c.data == "menu_queues")
 async def menu_queues(callback: CallbackQuery, state: FSMContext):
     """Показать список всех очередей"""
     if not queues:
-        await callback.message.edit_text("📭 Нет активных очередей.")
+        await callback.message.edit_text("📭 Нет активных очередей.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+            ]]))
         return
 
     builder = InlineKeyboardBuilder()
@@ -175,7 +174,10 @@ async def menu_myqueues(callback: CallbackQuery, state: FSMContext):
     user_queue_ids = [(qid, q) for qid, q in queues.items() if user_id in q.places.values()]
 
     if not user_queue_ids:
-        await callback.message.edit_text("📭 Вы не записаны ни в одну очередь.")
+        await callback.message.edit_text("📭 Вы не записаны ни в одну очередь.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+            ]]))
         return
 
     lines = ["📋 Ваши записи:\n"]
@@ -201,7 +203,10 @@ async def menu_swap(callback: CallbackQuery, state: FSMContext):
     user_queue_ids = [(qid, q) for qid, q in queues.items() if user_id in q.places.values()]
 
     if not user_queue_ids:
-        await callback.message.edit_text("❌ Сначала запишитесь в очередь!")
+        await callback.message.edit_text("❌ Сначала запишитесь в очередь!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+            ]]))
         return
 
     if len(user_queue_ids) == 1:
@@ -232,7 +237,10 @@ async def menu_freeswap(callback: CallbackQuery, state: FSMContext):
     user_queue_ids = [(qid, q) for qid, q in queues.items() if user_id in q.places.values()]
 
     if not user_queue_ids:
-        await callback.message.edit_text("❌ Сначала запишитесь в очередь!")
+        await callback.message.edit_text("❌ Сначала запишитесь в очередь!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+            ]]))
         return
 
     if len(user_queue_ids) == 1:
