@@ -655,6 +655,36 @@ async def decline_swap(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.message(QueueStates.waiting_for_queue_name)
+async def process_queue_creation(message: Message, state: FSMContext):
+    """Обработка создания очереди"""
+    try:
+        parts = message.text.strip().split()
+        if len(parts) != 2:
+            await message.answer("❌ Неверный формат! Пример: Лаба1 15")
+            return
+
+        name = parts[0]
+        max_places = int(parts[1])
+
+        if max_places < 1 or max_places > 30:
+            await message.answer("❌ Количество мест: 1-30")
+            return
+
+        queue_id = len(queues) + 1
+        queue = Queue(id=queue_id, name=name, max_places=max_places)
+        queues[queue_id] = queue
+
+        await state.clear()
+        await message.answer(
+            f"✅ Очередь {name} создана!\n📊 Максимум мест: {max_places}",
+        )
+
+    except ValueError:
+        await state.clear()
+        await message.answer("❌ Неверный формат! Пример: Лаба1 15")
+
+
 async def main():
     load_dotenv()
 
