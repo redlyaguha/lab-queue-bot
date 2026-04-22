@@ -7,7 +7,6 @@ from typing import Optional
 
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
-from aiogram.filters.text import Text
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -181,7 +180,7 @@ async def cmd_myqueues(message: Message):
     await message.answer("\n".join(lines))
 
 
-@router.callback_query(Text(startswith="take_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("take_"))
 async def take_place(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
 
@@ -272,7 +271,7 @@ async def cmd_swap_request(message: Message):
     )
 
 
-@router.callback_query(Text(startswith="swap_init_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_init_"))
 async def init_swap(callback: CallbackQuery, state: FSMContext):
     _, _, queue_id_str, target_place_str = callback.data.split("_")
     queue_id = int(queue_id_str)
@@ -326,7 +325,7 @@ async def init_swap(callback: CallbackQuery, state: FSMContext):
     await callback.answer("✅ Запрос отправлен!")
 
 
-@router.callback_query(Text(startswith="swap_accept_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_accept_"))
 async def accept_swap(callback: CallbackQuery, state: FSMContext):
     _, req_id_str = callback.data.split("_")
     req_id = int(req_id_str)
@@ -359,7 +358,7 @@ async def accept_swap(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(Text(startswith="swap_decline_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_decline_"))
 async def decline_swap(callback: CallbackQuery, state: FSMContext):
     _, req_id_str = callback.data.split("_")
     req_id = int(req_id_str)
