@@ -7,6 +7,7 @@ from typing import Optional
 
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
+from aiogram.filters.base import Filter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -29,6 +30,18 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+
+class IgnoreGroups(Filter):
+    """Ignore messages from groups - only process private chats"""
+    async def __call__(self, message):
+        return message.chat.type == "private"
+
+
+class IgnoreGroupsCallback(Filter):
+    """Ignore callbacks from groups - only process private chats"""
+    async def __call__(self, callback):
+        return callback.message.chat.type == "private"
 
 
 class QueueStates(StatesGroup):
@@ -124,7 +137,7 @@ async def show_main_menu(callback, user_id: int = None):
     )
 
 
-@router.message(Command("start"))
+@router.message(Command("start"), IgnoreGroups())
 async def cmd_start(message: Message, state: FSMContext):
     """Главное меню"""
     # Сохраняем имя пользователя
@@ -157,7 +170,7 @@ async def cmd_start(message: Message, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data == "menu_queues")
+@router.callback_query(lambda c: c.data == "menu_queues", IgnoreGroupsCallback())
 async def menu_queues(callback: CallbackQuery, state: FSMContext):
     """Показать список всех очередей"""
     if not queues:
@@ -186,7 +199,7 @@ async def menu_queues(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data == "menu_myqueues")
+@router.callback_query(lambda c: c.data == "menu_myqueues", IgnoreGroupsCallback())
 async def menu_myqueues(callback: CallbackQuery, state: FSMContext):
     """Показать очереди пользователя"""
     user_id = callback.from_user.id
@@ -215,7 +228,7 @@ async def menu_myqueues(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data == "menu_swap")
+@router.callback_query(lambda c: c.data == "menu_swap", IgnoreGroupsCallback())
 async def menu_swap(callback: CallbackQuery, state: FSMContext):
     """Запрос на обмен местами"""
     user_id = callback.from_user.id
@@ -249,7 +262,7 @@ async def menu_swap(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data == "menu_freeswap")
+@router.callback_query(lambda c: c.data == "menu_freeswap", IgnoreGroupsCallback())
 async def menu_freeswap(callback: CallbackQuery, state: FSMContext):
     """Сменить место на свободное"""
     user_id = callback.from_user.id
@@ -296,7 +309,7 @@ async def menu_freeswap(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data == "menu_create")
+@router.callback_query(lambda c: c.data == "menu_create", IgnoreGroupsCallback())
 async def menu_create(callback: CallbackQuery, state: FSMContext):
     """Создать очередь (только админ)"""
     if not is_admin(callback.from_user.id):
@@ -318,13 +331,13 @@ async def menu_create(callback: CallbackQuery, state: FSMContext):
     await state.update_data(instruction_msg_id=msg.message_id)
 
 
-@router.callback_query(lambda c: c.data == "back_to_menu")
+@router.callback_query(lambda c: c.data == "back_to_menu", IgnoreGroupsCallback())
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     """Вернуться в главное меню"""
     await show_main_menu(callback)
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("queue_view_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("queue_view_"), IgnoreGroupsCallback())
 async def view_queue(callback: CallbackQuery, state: FSMContext):
     queue_id = int(callback.data.split("_")[-1])
     queue = queues[queue_id]
@@ -357,7 +370,7 @@ async def view_queue(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
 
 
-@router.callback_query(lambda c: c.data == "back_to_queues")
+@router.callback_query(lambda c: c.data == "back_to_queues", IgnoreGroupsCallback())
 async def back_to_queues(callback: CallbackQuery, state: FSMContext):
     builder = InlineKeyboardBuilder()
     for queue_id, queue in queues.items():
@@ -378,7 +391,7 @@ async def back_to_queues(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("take_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("take_"), IgnoreGroupsCallback())
 async def take_place(callback: CallbackQuery, state: FSMContext):
     user_id = callback.from_user.id
 
@@ -468,7 +481,7 @@ async def show_swap_targets(message: Message, queue_id: int, queue: Queue, user_
     )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("swap_q_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_q_"), IgnoreGroupsCallback())
 async def select_swap_queue(callback: CallbackQuery, state: FSMContext):
     queue_id = int(callback.data.split("_")[-1])
     queue = queues[queue_id]
@@ -481,7 +494,7 @@ async def select_swap_queue(callback: CallbackQuery, state: FSMContext):
     await show_swap_targets(callback.message, queue_id, queue, user_id)
 
 
-@router.message(Command("free_swap"))
+@router.message(Command("free_swap"), IgnoreGroups())
 async def cmd_free_swap(message: Message):
     user_id = message.from_user.id
 
@@ -562,7 +575,7 @@ async def show_free_swap_targets(callback, queue_id: int, queue: Queue, user_id:
     )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("free_q_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("free_q_"), IgnoreGroupsCallback())
 async def select_free_queue(callback: CallbackQuery, state: FSMContext):
     queue_id = int(callback.data.split("_")[-1])
     queue = queues[queue_id]
@@ -575,7 +588,7 @@ async def select_free_queue(callback: CallbackQuery, state: FSMContext):
     await show_free_swap_targets(callback.message, queue_id, queue, user_id)
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("swap_init_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_init_"), IgnoreGroupsCallback())
 async def init_swap(callback: CallbackQuery, state: FSMContext):
     parts = callback.data.split("_")
     queue_id = int(parts[2])
@@ -642,7 +655,7 @@ async def init_swap(callback: CallbackQuery, state: FSMContext):
     await callback.answer("✅ Запрос отправлен!")
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("swap_accept_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_accept_"), IgnoreGroupsCallback())
 async def accept_swap(callback: CallbackQuery, state: FSMContext):
     req_id = int(callback.data.split("_")[-1])
 
@@ -674,7 +687,7 @@ async def accept_swap(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("free_swap_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("free_swap_"), IgnoreGroupsCallback())
 async def free_swap(callback: CallbackQuery, state: FSMContext):
     parts = callback.data.split("_")
     queue_id = int(parts[2])
@@ -722,7 +735,7 @@ async def free_swap(callback: CallbackQuery, state: FSMContext):
     await callback.answer(f"✅ Вы перешли на место {new_place}!")
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("swap_decline_"))
+@router.callback_query(lambda c: c.data and c.data.startswith("swap_decline_"), IgnoreGroupsCallback())
 async def decline_swap(callback: CallbackQuery, state: FSMContext):
     req_id = int(callback.data.split("_")[-1])
 
@@ -746,7 +759,7 @@ async def decline_swap(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.message(QueueStates.waiting_for_queue_name)
+@router.message(QueueStates.waiting_for_queue_name, IgnoreGroups())
 async def process_queue_creation(message: Message, state: FSMContext):
     """Обработка создания очереди"""
     try:
