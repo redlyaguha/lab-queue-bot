@@ -264,14 +264,27 @@ async def menu_freeswap(callback: CallbackQuery, state: FSMContext):
 
     if len(user_queue_ids) == 1:
         queue_id, queue = user_queue_ids[0]
-        await show_free_swap_targets(callback.message, queue_id, queue, user_id)
+        await show_free_swap_targets(callback, queue_id, queue, user_id)
         return
 
     builder = InlineKeyboardBuilder()
-    for qid, queue in user_queue_ids:
+    for queue_id, queue in user_queue_ids:
         builder.add(
-            InlineKeyboardButton(text=queue.name, callback_data=f"free_q_{qid}"),
+            InlineKeyboardButton(text=queue.name, callback_data=f"free_q_{queue_id}"),
         )
+    builder.adjust(2)
+    builder.row(
+        InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu"),
+    )
+
+    await callback.message.delete()
+    await callback.message.answer(
+        "📋 Выберите очередь:",
+        reply_markup=builder.as_markup(),
+    )
     builder.adjust(2)
     builder.row(
         InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
@@ -335,10 +348,10 @@ async def view_queue(callback: CallbackQuery, state: FSMContext):
             )
     builder.adjust(5)
     builder.row(
-        InlineKeyboardButton(
-            text="◀ Назад",
-            callback_data="back_to_queues",
-        )
+        InlineKeyboardButton(text="◀ К списку очередей", callback_data="menu_queues"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu"),
     )
 
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
@@ -355,6 +368,9 @@ async def back_to_queues(callback: CallbackQuery, state: FSMContext):
             )
         )
     builder.adjust(2)
+    builder.row(
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu"),
+    )
 
     await callback.message.edit_text(
         "📋 Выберите очередь:",
@@ -406,10 +422,10 @@ async def take_place(callback: CallbackQuery, state: FSMContext):
             )
     builder.adjust(5)
     builder.row(
-        InlineKeyboardButton(
-            text="◀ Назад к списку",
-            callback_data="back_to_queues",
-        )
+        InlineKeyboardButton(text="◀ Назад к списку", callback_data="back_to_queues"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu"),
     )
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer(f"✅ Вы записаны на место {place}!")
@@ -500,7 +516,8 @@ async def cmd_free_swap(message: Message):
     )
 
 
-async def show_free_swap_targets(message: Message, queue_id: int, queue: Queue, user_id: int):
+async def show_free_swap_targets(callback, queue_id: int, queue: Queue, user_id: int):
+    """Показать свободные места для перехода"""
     user_place = None
     for p, uid in queue.places.items():
         if uid == user_id:
@@ -508,7 +525,10 @@ async def show_free_swap_targets(message: Message, queue_id: int, queue: Queue, 
             break
     
     if user_place is None:
-        await message.answer("❌ Вы не записаны в эту очередь!")
+        await callback.message.answer("❌ Вы не записаны в эту очередь!",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+            ]]))
         return
 
     builder = InlineKeyboardBuilder()
@@ -522,14 +542,21 @@ async def show_free_swap_targets(message: Message, queue_id: int, queue: Queue, 
             )
     builder.adjust(5)
     builder.row(
-        InlineKeyboardButton(text="◀ Назад", callback_data="back_to_menu"),
+        InlineKeyboardButton(text="◀ Назад", callback_data="menu_freeswap"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu"),
     )
 
     if not builder.buttons:
-        await message.answer("❌ Нет свободных мест.")
+        await callback.message.answer("❌ Нет свободных мест.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="◀ Назад", callback_data="menu_freeswap"),
+            ]]))
         return
 
-    await message.answer(
+    await callback.message.delete()
+    await callback.message.answer(
         "🔄 Выберите свободное место:",
         reply_markup=builder.as_markup(),
     )
@@ -567,21 +594,34 @@ async def init_swap(callback: CallbackQuery, state: FSMContext):
     swap_counter += 1
     req_id = swap_counter
 
+    # Находим место текущего пользователя
+    from_place = None
+    for p, uid in queue.places.items():
+        if uid == from_user_id:
+            from_place = p
+            break
+
+    if from_place is None:
+        await callback.answer("❌ Ошибка: место не найдено!", show_alert=True)
+        return
+
     swap_requests[req_id] = SwapRequest(
         id=req_id,
         queue_id=queue_id,
         from_user_id=from_user_id,
         to_user_id=to_user_id,
-        from_place=queue.places[from_user_id],
+        from_place=from_place,
         to_place=target_place,
     )
 
+    # Уведомление другому пользователю
+    from_name = users.get(from_user_id, f"Пользователь")
     await callback.bot.send_message(
         to_user_id,
         f"🔄 Запрос на обмен местами!\n\n"
-        f"Пользователь хочет поменяться с вами местами.\n"
+        f"{from_name} хочет поменяться с вами местами.\n"
         f"📋 Очередь: {queue.name}\n"
-        f"🔄 Его место: {swap_requests[req_id].from_place} → Ваше место: {target_place}\n\n"
+        f"🔄 Его место: {from_place} → Ваше место: {target_place}\n\n"
         "Нажмите кнопку для согласия:",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[
@@ -604,8 +644,7 @@ async def init_swap(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(lambda c: c.data and c.data.startswith("swap_accept_"))
 async def accept_swap(callback: CallbackQuery, state: FSMContext):
-    _, req_id_str = callback.data.split("_")
-    req_id = int(req_id_str)
+    req_id = int(callback.data.split("_")[-1])
 
     if req_id not in swap_requests:
         await callback.answer("❌ Запрос не найден!", show_alert=True)
@@ -654,15 +693,38 @@ async def free_swap(callback: CallbackQuery, state: FSMContext):
     queue.places[new_place] = user_id
 
     text = get_queue_view(queue, users)
-    keyboard = get_queue_keyboard(queue)
-    await callback.message.edit_text(text, reply_markup=keyboard)
+    builder = InlineKeyboardBuilder()
+    for i in range(1, queue.max_places + 1):
+        if i in queue.places:
+            builder.add(
+                InlineKeyboardButton(
+                    text=f"[{i}] Занято",
+                    callback_data=f"locked_{i}",
+                )
+            )
+        else:
+            builder.add(
+                InlineKeyboardButton(
+                    text=f"{i}",
+                    callback_data=f"take_{queue_id}_{i}",
+                )
+            )
+    builder.adjust(5)
+    builder.row(
+        InlineKeyboardButton(text="◀ Назад к очереди", callback_data=f"queue_view_{queue_id}"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu"),
+    )
+
+    await callback.message.delete()
+    await callback.message.answer(text, reply_markup=builder.as_markup())
     await callback.answer(f"✅ Вы перешли на место {new_place}!")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("swap_decline_"))
 async def decline_swap(callback: CallbackQuery, state: FSMContext):
-    _, req_id_str = callback.data.split("_")
-    req_id = int(req_id_str)
+    req_id = int(callback.data.split("_")[-1])
 
     if req_id not in swap_requests:
         await callback.answer("❌ Запрос не найден!", show_alert=True)
